@@ -24,7 +24,7 @@ As this process is entirely deterministic, the same Ledger will always generate 
 
 **Note:** at the moment, any application running on your Nano S can execute this process and derive your secret keys. Reportedly, Nano S firmware 1.4 is going to introduce the possibility of limiting apps to using a pre-determined set of BIP32 paths.
 
-**Note:** reinstalling or updating `nanos-app-yubico-otp` will delete the public IDs stored in the Ledger's persistent memory. It is not currently possible to get them back in, which means you won't be able to continue using the same keys. This will be fixed in the version 0.2.0 of `nanos-app-yubico-otp`, when it will be possible to import a key by manually entering its public ID.
+**Note:** reinstalling or updating `nanos-app-yubico-otp` will delete the public IDs stored in the Ledger's persistent memory. It is not currently possible to get them back in, which means you won't be able to continue using the same keys. This will be fixed in the version 0.2.0 of `nanos-app-yubico-otp`, when it will be possible to import a key by entering its public ID.
 
 ## Note on OTP timestamps
 
@@ -33,6 +33,10 @@ Yubico OTPs include timestamps --- information about how much time had passed si
 However, seven years since the release of [Yubico's official validator](https://developers.yubico.com/yubikey-val/), the feature remains effectively unimplemented (see [lines 431--472](https://github.com/Yubico/yubikey-val/blob/b8168539ba6b6026675b5af8404449cc273c1971/ykval-verify.php#L431-L472) of ykval-verify.php in version 2.39 of yubikey-val, especially the comment saying "should we nuke or enable?"). Likewise, none of the 3rd party validation libraries seem to be using the timestamp for anything.
 
 Because the Nano S lacks an accurate RTC, and the timestamps aren't actually used for anything in the real world, `nanos-app-yubico-otp` does **not** include accurate timestamps in the generated OTPs. The token's use counter is duplicated instead, to ensure that at least the fake timestamps increase monotonically.
+
+## Note on serial numbers
+
+Some services might ask you for your token's serial number when enrolling it. The token's serial number does not affect key or token generation in any way on real Yubikeys, so you should feel free to set it to any random string that the service will accept.
 
 ## Licensing
 
