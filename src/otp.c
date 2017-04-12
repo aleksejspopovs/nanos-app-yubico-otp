@@ -42,7 +42,24 @@ void bytes_to_modhex(uint8_t* bytes, uint32_t length, char* out) {
     out[2 * length] = 0;
 }
 
-static uint16_t crc_16(uint8_t *data, uint32_t length, uint16_t crc) {
+/*
+  one of the steps in the Yubico OTP algorithm involves adding two bytes
+  to a string such that its CRC value, when computed as in otp_crc()
+  (with the initial value 0xffff), becomes 0xf0b8.
+
+  note that knowing the CRC of a string is sufficient to find the CRC
+  of a string obtained by adding more bytes to the original one.
+
+  specifically, if CRC(x) = 0x0f87, then CRC(x + [0]) = 0xf0b8.
+  from this it follows that for any b <= 0xff,
+  if CRC(x) = 0x0f87 ^ b, then CRC(x + [b]) = 0xf0b8.
+
+  so we just bruteforce the first byte until the CRC of the original data
+  + this byte becomes 0x0f**, then use the observation above to get the
+  second byte.
+*/
+
+static uint16_t otp_crc(uint8_t *data, uint32_t length, uint16_t crc) {
     uint32_t i;
     for (i = 0; i < length; i++) {
         crc ^= data[i];
@@ -56,6 +73,23 @@ static uint16_t crc_16(uint8_t *data, uint32_t length, uint16_t crc) {
         }
     }
     return crc;
+}
+
+static void otp_crc_forge_0xf0b8(uint8_t *data, uint32_t length) {
+    uint16_t partial_crc = otp_crc(data, length, 0xffff);
+    // unsigned overflows are *not* undefined behavior.
+    // ++x == 0 will be true only when x == 255.
+    // besides, this loop will return before this is reached.
+    data[length] = 0;
+    do {
+        uint16_t crc = otp_crc(&data[length], 1, partial_crc);
+        if (crc >> 8 == 0x0f) {
+            data[length + 1] = 0x87 ^ (crc & 0xff);
+            return;
+        }
+    } while (++data[length] != 0);
+
+    THROW(EXCEPTION);
 }
 
 
@@ -90,29 +124,10 @@ void otp_generate_token(otpKeySlot_t* key, char* token) {
     // counter, 1 byte
     plaintext[OTP_PRIVATE_ID_LEN + 5] = token_count_since_boot;
     // junk, 4 bytes
-    // we insert two random bytes, then bruteforce the other two to get the correct CRC16
+    // we insert two random bytes, then compute the other two to get the correct CRC16
     plaintext[OTP_PRIVATE_ID_LEN + 6] = cx_rng_u8();
     plaintext[OTP_PRIVATE_ID_LEN + 6 + 1] = cx_rng_u8();
-
-    uint16_t partial_crc = crc_16(plaintext, OTP_PRIVATE_ID_LEN + 2 + 3 + 1 + 2, 0xffff);
-    uint8_t junk[2];
-    uint8_t done = 0;
-    // TODO optimize
-    for (junk[0] = 0; ++junk[0] != 0;) {
-        for (junk[1] = 0; ++junk[1] != 0;) {
-            if (crc_16(junk, 2, partial_crc) == 0xf0b8) {
-                done = 1;
-                break;
-            }
-        }
-
-        if (done) {
-            break;
-        }
-    }
-
-    plaintext[OTP_PRIVATE_ID_LEN + 6 + 2] = junk[0];
-    plaintext[OTP_PRIVATE_ID_LEN + 6 + 3] = junk[1];
+    otp_crc_forge_0xf0b8(plaintext, OTP_PRIVATE_ID_LEN + 2 + 3 + 1 + 2);
 
     cx_aes_key_t aes_key;
     cx_aes_init_key(secrets.aes_key, OTP_AES_KEY_LEN, &aes_key);
